@@ -1,0 +1,134 @@
+name: APK olustur
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Proje dosyalarini olustur
+        run: |
+          HTML=$(ls *.html | head -n 1)
+          mkdir -p proje/app/src/main/java/com/dersprogrami/app proje/app/src/main/assets proje/app/src/main/res/mipmap-xxxhdpi
+          cp "$HTML" proje/app/src/main/assets/index.html
+          cd proje
+          cat > settings.gradle <<'A1'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "DersProgrami"
+          include(":app")
+          A1
+          cat > build.gradle <<'A2'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          A2
+          echo "org.gradle.jvmargs=-Xmx2g" > gradle.properties
+          cat > app/build.gradle <<'A3'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.dersprogrami.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.dersprogrami.app"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          A3
+          cat > app/src/main/AndroidManifest.xml <<'A4'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:label="Ders Programim"
+                  android:icon="@mipmap/ic_launcher"
+                  android:allowBackup="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          A4
+          cat > app/src/main/java/com/dersprogrami/app/MainActivity.java <<'A5'
+          package com.dersprogrami.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          public class MainActivity extends Activity {
+              private WebView web;
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  web = new WebView(this);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  web.setWebViewClient(new WebViewClient());
+                  setContentView(web);
+                  if (state != null) {
+                      web.restoreState(state);
+                  } else {
+                      web.loadUrl("file:///android_asset/index.html");
+                  }
+              }
+              @Override
+              protected void onSaveInstanceState(Bundle out) {
+                  super.onSaveInstanceState(out);
+                  web.saveState(out);
+              }
+          }
+          A5
+          python3 - <<'A6'
+          import zlib, struct
+          S = 192
+          raw = b''
+          for y in range(S):
+              raw += b'\x00'
+              for x in range(S):
+                  bar = 30 <= y < 44 and 28 <= x < 164
+                  cell = 60 <= y < 164 and 28 <= x < 164 and (x - 28) % 32 < 26 and (y - 60) % 26 < 20
+                  raw += bytes((255, 255, 255) if (bar or cell) else (58, 91, 217))
+          def chunk(t, d):
+              return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', S, S, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+          open('app/src/main/res/mipmap-xxxhdpi/ic_launcher.png', 'wb').write(png)
+          A6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - run: gradle assembleDebug --no-daemon
+        working-directory: proje
+      - run: cp proje/app/build/outputs/apk/debug/app-debug.apk Ders-Programim.apk
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ github.run_number }}" Ders-Programim.apk --title "Ders Programim v${{ github.run_number }}" --notes "APK"
